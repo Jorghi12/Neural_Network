@@ -1,0 +1,124 @@
+#Implementation of Newton Raphson algorithm
+
+#Locally weighted logistic regression utilizing Newton Raphson algorithm for optimization
+#X - The training input
+#Y - The training label
+#x - The query point
+#tau - The weight bandwidth parameter
+library(ggplot2)
+
+magnitude <- function(x) sqrt(sum(x^2))
+
+ComputeWi <- function(x,x_q,tau){
+  weight <- exp(-magnitude(x - x_q)^2/(2*tau^2))
+  return (weight)
+}
+
+NewtonRaphson_Update <- function(weight, H, J_grad){
+  #solve(H) returns the inverse of H
+  weight <- weight - solve(H) %*% J_grad
+  return (weight)
+}
+
+ComputeH <- function(X,D,tau){
+  H <- t(X) %*% (D %*% X) - tau*diag(ncol(X))
+  return (H)
+}
+
+Logis <- function(xi,theta){
+  return (1/(1 + exp(-t(theta)%*%xi)))
+}
+
+ComputeD <- function(X,theta, Wis){
+  D <- diag(nrow(X))
+  diagonals <- apply(X, 1, function(x_row) Logis(x_row,theta)*(1 - Logis(x_row,theta)))
+  diag(D) <- - Wis * diagonals
+  return (D)
+}
+
+ComputeL_grad <- function(X,Y,Wis,theta,tau){
+  LogisAll <- apply(X, 1, function(x_row) Logis(x_row,theta))
+  z <- Wis * (Y - LogisAll)
+  L <- t(X) %*% z - tau*theta
+  return (L)
+}
+
+LocalWeightLR <- function(X, Y, x_query, tau = .01, theta = c(0,0)){
+  #Create theta vector initialized to zero above
+
+  #Compute the weights for each training example with respect to our query point x_query
+  Wis <- apply(X, 1, function(x_row) ComputeWi(x_row,x_query,tau))
+  
+  #Compute the Diagonal Matrix of H = (X^T)(D)(X) - tau*I
+  D <- ComputeD(X,theta,Wis)
+  
+  #Compute the Hessian matrix H
+  H <- ComputeH(X,D,tau)
+  
+  #Compute the gradient of the likelihood function with respect to theta
+  L_grad <- ComputeL_grad(X,Y,Wis,theta,tau)
+  
+  #Perform a Newton Raphson Update on the parameteres
+  theta <- NewtonRaphson_Update(theta, H, L_grad) 
+  
+  return (theta)
+}
+
+PredictY <- function(x_query,iterations=1000,tau=.01, theta = c(0,0)){
+  Expected_theta <- ExecuteIterations(x_query,iterations,tau, theta)
+  return (Logis(x_query, Expected_theta) >= .5)
+}
+
+ExecuteIterations <- function(x_query,iterations=1000,tau=.01, theta = c(0,0)){
+  for (i in 1:iterations){
+    theta <- LocalWeightLR(X,Y,x_query,tau,theta)
+  }
+  return (theta)
+}
+
+TestingError <- function(X,Y,iterations=1000,tau=.01, theta = c(0,0)){
+  results <- apply(X, 1, function(x_row) PredictY(x_row,iterations,tau, theta))
+  total_error <- abs(Y - results)
+  
+  return (total_error)
+}
+
+DataLikelihood <- function(X,Y,Wis,theta,tau){
+  Regularizer <- -tau/2 * (t(theta)%*%theta)
+  Variance <- 0
+  for (i in 1:nrow(X)){
+    Variance <- Variance + Wis[i,]*(Y[i,]*log(Logis(X[i,],theta)) + (1 - Y[i,])*(log(1-Logis(X[i,],theta))))
+  }
+  
+  Likelihood <- Regularizer + Variance
+  return (Likelihood)
+}
+
+X <- read.table("q2\\data\\x.dat",header=F)
+Y <- read.table("q2\\data\\y.dat",header=F)
+
+X <- data.matrix(X)
+Y <- data.matrix(Y)
+
+
+
+#library(ggplot2)
+#Correct predictions are blue
+#Make sure to play around with theta!
+total_error <- TestingError(X,Y,iterations=5,tau=.05, c(0,0))
+df <- data.frame(X1 = X[,1],X2 = X[,2], Colr = ifelse(total_error[,] == 0,"#3399FF","#FF0000"))
+ggplot(df,aes(x = X1, y = X2, colour = Colr)) + geom_point(size=5) +
+  scale_colour_identity(guide="legend",breaks=c("#3399FF","#FF0000"))
+
+print(c("Total error of:",sum(total_error)/nrow(Y),"%"))
+#Results from TestError with 5 iterations
+#Values of tau:
+#tau = .01   --- Errors = 0
+#tau = .05   --- Errors = 0
+#tau = .10   --- Errors = 0
+#tau = .50   --- Errors = 15
+#tau = 1.0   --- Errors = 17
+#tau = 5.0   --- Errors = 17
+#tau approach inf --- Errors = 16
+
+#Low tau causes overfitting
