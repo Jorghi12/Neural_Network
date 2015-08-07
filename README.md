@@ -1,2 +1,3 @@
 # Neural_Network
-A two layer Neural Network written in R.
+
+In this repository holds multiple Neural Network implementations and other ML implementations.
